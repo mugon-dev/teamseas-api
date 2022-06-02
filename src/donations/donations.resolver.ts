@@ -1,34 +1,46 @@
-import { Resolver, Query, Mutation, Args } from '@nestjs/graphql';
+import { Args, Mutation, Query, Resolver, Subscription } from '@nestjs/graphql';
 import { DonationsService } from './donations.service';
-import { CreateDonationInput } from './dto/create-donation.input';
-import { UpdateDonationInput } from './dto/update-donation.input';
+import { OrderByParams } from '../graphql';
+import { DonationCreateInput } from '../@generated/prisma-nestjs-graphql/donation/donation-create.input';
+import { PubSub } from 'graphql-subscriptions';
+
+const pubSub = new PubSub();
 
 @Resolver('Donation')
 export class DonationsResolver {
   constructor(private readonly donationsService: DonationsService) {}
 
   @Mutation('createDonation')
-  create(@Args('createDonationInput') createDonationInput: CreateDonationInput) {
-    return this.donationsService.create(createDonationInput);
+  async create(
+    @Args('createDonationInput')
+    createDonationInput: DonationCreateInput, //Prisma.DonationCreateInput,
+  ) {
+    const created = await this.donationsService.create(createDonationInput);
+    const total = await this.donationsService.getTotal();
+    await pubSub.publish('totalUpdated', { totalUpdated: { total } });
+    return created;
+  }
+
+  @Subscription()
+  totalUpdated() {
+    return pubSub.asyncIterator('totalUpdated');
   }
 
   @Query('donations')
-  findAll() {
-    return this.donationsService.findAll();
+  findAll(
+    @Args('orderBy')
+    orderBy?: OrderByParams,
+  ) {
+    return this.donationsService.findAll(orderBy);
   }
 
   @Query('donation')
   findOne(@Args('id') id: number) {
-    return this.donationsService.findOne(id);
+    return this.donationsService.findOne({ id });
   }
 
-  @Mutation('updateDonation')
-  update(@Args('updateDonationInput') updateDonationInput: UpdateDonationInput) {
-    return this.donationsService.update(updateDonationInput.id, updateDonationInput);
-  }
-
-  @Mutation('removeDonation')
-  remove(@Args('id') id: number) {
-    return this.donationsService.remove(id);
+  @Query('totalDonations')
+  totalDonations() {
+    return this.donationsService.getTotal();
   }
 }
